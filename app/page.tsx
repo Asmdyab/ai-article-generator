@@ -60,6 +60,7 @@ export default function Home() {
 
       if (reader) {
         let buffer = '';
+        let articleReceived = false;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -95,6 +96,7 @@ export default function Home() {
               } else if (type === 'article') {
                 const parsed = JSON.parse(data);
                 setCurrentArticle(parsed);
+                articleReceived = true;
               } else if (type === 'image') {
                 const parsed = JSON.parse(data);
                 setCurrentArticle(prev => {
@@ -111,7 +113,7 @@ export default function Home() {
               } else if (type === 'done') {
                 setStatus('');
                 // Add success message to chat
-                if (currentArticle) {
+                if (articleReceived) {
                   const assistantMessage: Message = {
                     id: `done-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                     role: 'assistant',
