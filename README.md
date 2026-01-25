@@ -1,4 +1,12 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Article Generator 🤖
+
+مولد مقالات ذكي يستخدم تقنيات الذكاء الاصطناعي لكتابة مقالات احترافية باللغة العربية.
+
+An intelligent article generator that uses AI to write professional articles in Arabic.
+
+## Screenshot
+
+![AI Article Generator](./public/images/screenshot.png)
 
 ## Getting Started
 
