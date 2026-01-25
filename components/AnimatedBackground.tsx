@@ -2,14 +2,14 @@ const AnimatedBackground = () => {
   return (
     <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
       {/* Animated stripes */}
-      {[...Array(15)].map((_, i) => (
+      {[...Array(6)].map((_, i) => (
         <div
           key={i}
           className="animated-stripe h-full"
           style={{
-            left: `${5 + i * 6.5}%`,
-            animationDelay: `${i * 0.5}s`,
-            opacity: 0.2 + (i % 3) * 0.15,
+            left: `${10 + i * 15}%`,
+            animationDelay: `${i * 0.8}s`,
+            opacity: 0.25 + (i % 3) * 0.15,
           }}
         />
       ))}
