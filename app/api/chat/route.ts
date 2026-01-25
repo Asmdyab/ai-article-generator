@@ -1,5 +1,5 @@
 import { createVertex } from '@ai-sdk/google-vertex';
-import { generateText, generateObject } from 'ai';
+import { generateText, generateObject, streamText } from 'ai';
 import { z } from 'zod';
 import Exa from 'exa-js';
 
@@ -11,7 +11,7 @@ const vertex = createVertex({
   location: process.env.GOOGLE_VERTEX_LOCATION || 'us-central1',
 });
 
-// Article point schema
+// Article schema
 const ArticleSchema = z.object({
   title: z.string().describe('عنوان المقال'),
   introduction: z.string().describe('مقدمة المقال'),
@@ -24,25 +24,20 @@ const ArticleSchema = z.object({
   conclusion: z.string().describe('خاتمة المقال'),
 });
 
-type ArticlePoint = {
-  heading: string;
-  content: string;
-  imagePrompt: string;
-  shouldHaveImage: boolean;
-  imageData?: string;
-};
+// Tool decision schema
+const ToolDecisionSchema = z.object({
+  tool: z.enum(['generate_article', 'chat']).describe('Which tool to use'),
+  topic: z.string().optional().describe('The article topic if generate_article is chosen'),
+  response: z.string().optional().describe('The chat response if chat is chosen'),
+});
 
-type Article = {
-  title: string;
-  introduction: string;
-  points: ArticlePoint[];
-  conclusion: string;
-};
+// Helper: delay function
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Step 1: Search with Exa
+// Search with Exa
 async function searchWeb(topic: string): Promise<string> {
   try {
-    console.log('Step 1: Searching Exa for:', topic);
+    console.log('Searching Exa for:', topic);
     const results = await exa.searchAndContents(topic, {
       numResults: 5,
       text: true,
@@ -52,7 +47,6 @@ async function searchWeb(topic: string): Promise<string> {
       .map((r: any) => `Title: ${r.title}\nURL: ${r.url}\nContent: ${r.text?.substring(0, 800)}...`)
       .join('\n\n---\n\n');
     
-    console.log('Search completed, results length:', searchResults.length);
     return searchResults || 'No results found';
   } catch (error) {
     console.error('Exa search error:', error);
@@ -60,10 +54,8 @@ async function searchWeb(topic: string): Promise<string> {
   }
 }
 
-// Step 2: Generate structured article points from search results
-async function generateArticlePoints(topic: string, searchResults: string): Promise<Article> {
-  console.log('Step 2: Generating article points...');
-  
+// Generate structured article
+async function generateArticlePoints(topic: string, searchResults: string) {
   const result = await generateObject({
     model: vertex('gemini-2.5-flash'),
     schema: ArticleSchema,
@@ -86,25 +78,18 @@ ${searchResults}
 ملاحظة: اجعل المحتوى غني بالمعلومات من نتائج البحث`,
   });
   
-  console.log('Article points generated:', result.object.points.length, 'points');
-  return result.object as Article;
+  return result.object;
 }
 
-// Helper: delay function
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Step 3: Generate image for a point using Imagen with retry
+// Generate image using Imagen
 async function generateImage(prompt: string, retryCount = 0): Promise<string | null> {
   const MAX_RETRIES = 3;
-  const BASE_DELAY = 5000; // 5 seconds base delay
+  const BASE_DELAY = 5000;
   
   try {
-    console.log('Generating image for:', prompt.substring(0, 50));
-    
     const project = process.env.GOOGLE_VERTEX_PROJECT || 'asem-pro';
     const location = process.env.GOOGLE_VERTEX_LOCATION || 'us-central1';
     
-    // Get access token
     const { GoogleAuth } = await import('google-auth-library');
     const auth = new GoogleAuth({
       scopes: ['https://www.googleapis.com/auth/cloud-platform'],
@@ -121,9 +106,7 @@ async function generateImage(prompt: string, retryCount = 0): Promise<string | n
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        instances: [{
-          prompt: prompt.slice(0, 200),
-        }],
+        instances: [{ prompt: prompt.slice(0, 200) }],
         parameters: {
           sampleCount: 1,
           aspectRatio: '16:9',
@@ -134,26 +117,18 @@ async function generateImage(prompt: string, retryCount = 0): Promise<string | n
     });
     
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Imagen API error:', errorText);
-      
-      // Retry on rate limit (429)
       if (response.status === 429 && retryCount < MAX_RETRIES) {
-        const waitTime = BASE_DELAY * Math.pow(2, retryCount); // Exponential backoff
-        console.log(`Rate limited. Waiting ${waitTime/1000}s before retry ${retryCount + 1}/${MAX_RETRIES}...`);
+        const waitTime = BASE_DELAY * Math.pow(2, retryCount);
         await delay(waitTime);
         return generateImage(prompt, retryCount + 1);
       }
-      
       return null;
     }
     
     const data = await response.json();
     
     if (data.predictions && data.predictions[0]?.bytesBase64Encoded) {
-      const base64 = data.predictions[0].bytesBase64Encoded;
-      console.log('Image generated successfully with Imagen');
-      return `data:image/png;base64,${base64}`;
+      return `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
     }
     
     return null;
@@ -165,70 +140,95 @@ async function generateImage(prompt: string, retryCount = 0): Promise<string | n
 
 export async function POST(req: Request) {
   try {
-    const { topic } = await req.json();
-    console.log('=== Starting article generation for:', topic, '===');
+    const { message, messages = [] } = await req.json();
+    const userMessage = message || messages[messages.length - 1]?.content || '';
+    
+    console.log('=== Received message:', userMessage, '===');
 
     const encoder = new TextEncoder();
     
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          // Send status update
-          const sendStatus = (status: string) => {
-            controller.enqueue(encoder.encode(`status:${JSON.stringify({ message: status })}\n`));
+          const sendEvent = (type: string, data: any) => {
+            controller.enqueue(encoder.encode(`${type}:${JSON.stringify(data)}\n`));
           };
           
-          // Step 1: Search
-          sendStatus('جاري البحث عن المعلومات...');
+          // Step 1: Decide which tool to use
+          sendEvent('status', { message: 'جاري تحليل الطلب...' });
+          
+          const decision = await generateObject({
+            model: vertex('gemini-2.5-flash'),
+            schema: ToolDecisionSchema,
+            prompt: `You are an AI assistant that can either generate articles or chat with users.
+
+Analyze this user message and decide what to do:
+"${userMessage}"
+
+Rules:
+- If the user wants to create/generate/write an article, blog post, or detailed content about a topic → use "generate_article" and extract the topic
+- If the user is asking questions, greeting, chatting, or anything else → use "chat" and provide a helpful response in Arabic
+
+Examples:
+- "اكتب مقال عن الذكاء الاصطناعي" → generate_article, topic: "الذكاء الاصطناعي"
+- "Create an article about climate change" → generate_article, topic: "climate change"
+- "مرحبا" → chat, response: "مرحباً! كيف يمكنني مساعدتك اليوم؟"
+- "ما هو الذكاء الاصطناعي؟" → chat, response: [answer the question]
+- "اعمل مقال عن السياحة في مصر" → generate_article, topic: "السياحة في مصر"
+
+Respond appropriately based on the user's intent.`,
+          });
+          
+          console.log('Tool decision:', decision.object);
+          
+          if (decision.object.tool === 'chat') {
+            // Chat response
+            sendEvent('chat', { message: decision.object.response });
+            sendEvent('done', { success: true });
+            controller.close();
+            return;
+          }
+          
+          // Generate article
+          const topic = decision.object.topic || userMessage;
+          console.log('Generating article for topic:', topic);
+          
+          // Search
+          sendEvent('status', { message: 'جاري البحث عن المعلومات...' });
           const searchResults = await searchWeb(topic);
-          sendStatus('تم البحث بنجاح! جاري تحليل النتائج...');
+          sendEvent('status', { message: 'تم البحث! جاري إنشاء المقال...' });
           
-          // Step 2: Generate article structure
-          sendStatus('جاري إنشاء هيكل المقال...');
+          // Generate article structure
           const article = await generateArticlePoints(topic, searchResults);
-          sendStatus('تم إنشاء المقال! جاري توليد الصور...');
+          sendEvent('status', { message: 'تم إنشاء المقال! جاري توليد الصور...' });
+          sendEvent('article', article);
           
-          // Send initial article structure (without images)
-          controller.enqueue(encoder.encode(`article:${JSON.stringify(article)}\n`));
-          
-          // Step 3: Generate images for points that need them
+          // Generate images
           const pointsWithImages = article.points.filter(p => p.shouldHaveImage);
-          console.log('Points needing images:', pointsWithImages.length);
-          
-          // Limit to max 3 images to avoid rate limits
           const imagesToGenerate = pointsWithImages.slice(0, 3);
-          console.log('Generating images for', imagesToGenerate.length, 'points');
           
           for (let i = 0; i < imagesToGenerate.length; i++) {
             const point = imagesToGenerate[i];
             const pointIndex = article.points.findIndex(p => p.heading === point.heading);
             
-            sendStatus(`جاري توليد صورة ${i + 1} من ${imagesToGenerate.length}...`);
+            sendEvent('status', { message: `جاري توليد صورة ${i + 1} من ${imagesToGenerate.length}...` });
             
-            // Add delay between requests to avoid rate limiting
-            if (i > 0) {
-              await delay(3000); // Wait 3 seconds between images
-            }
+            if (i > 0) await delay(3000);
             
             const imageData = await generateImage(point.imagePrompt);
             
             if (imageData) {
-              // Send image update for this specific point
-              controller.enqueue(encoder.encode(`image:${JSON.stringify({
-                pointIndex,
-                imageData,
-                heading: point.heading
-              })}\n`));
+              sendEvent('image', { pointIndex, imageData, heading: point.heading });
             }
           }
           
-          sendStatus('تم الانتهاء!');
-          controller.enqueue(encoder.encode(`done:${JSON.stringify({ success: true })}\n`));
+          sendEvent('status', { message: 'تم الانتهاء!' });
+          sendEvent('done', { success: true });
           controller.close();
           
         } catch (error) {
           console.error('Stream error:', error);
-          controller.enqueue(encoder.encode(`error:${JSON.stringify({ message: 'حدث خطأ أثناء التوليد' })}\n`));
+          controller.enqueue(encoder.encode(`error:${JSON.stringify({ message: 'حدث خطأ' })}\n`));
           controller.close();
         }
       },
@@ -242,13 +242,10 @@ export async function POST(req: Request) {
       },
     });
   } catch (error) {
-    console.error('Error generating article:', error);
+    console.error('Error:', error);
     return new Response(
-      JSON.stringify({ error: 'Failed to generate article' }),
-      {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      }
+      JSON.stringify({ error: 'Failed to process request' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }

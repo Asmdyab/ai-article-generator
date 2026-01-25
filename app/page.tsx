@@ -1,94 +1,66 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import AnimatedBackground from '@/components/AnimatedBackground';
+import ChatPanel from '@/components/ChatPanel';
+import ArticlePanel from '@/components/ArticlePanel';
 
-// Type for image data from tool results
-interface GeneratedImage {
-  imageData: string;
-  label: string;
+// Types
+interface ArticlePoint {
+  heading: string;
+  content: string;
+  imagePrompt: string;
+  shouldHaveImage: boolean;
+  imageData?: string;
 }
 
-// Component to render article content with embedded images
-function ArticleContent({ content, images }: { content: string; images: GeneratedImage[] }) {
-  // Clean up the content - remove tool result markers
-  let cleanContent = content
-    .replace(/\[IMAGE_GENERATED:[^\]]+\][^\n]*/g, '') // Remove image success markers
-    .replace(/\[IMAGE_FAILED\][^\n]*/g, '') // Remove image failure markers
-    .trim();
-  
-  // Format markdown
-  const formatText = (text: string) => {
-    return text
-      .replace(/\\n/g, '\n')
-      .replace(/\n/g, '<br />')
-      .replace(/## (.+)/g, '<h2 class="font-bold text-2xl mt-6 mb-3 text-gray-900">$1</h2>')
-      .replace(/### (.+)/g, '<h3 class="font-bold text-xl mt-4 mb-2 text-gray-800">$1</h3>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g, '<em>$1</em>');
-  };
-  
-  return (
-    <div className="space-y-6">
-      {/* Show generated images at the top */}
-      {images.length > 0 && (
-        <div className="mb-8">
-          {images.map((img, index) => (
-            <figure key={index} className="my-4">
-              <img
-                src={img.imageData}
-                alt={img.label || 'Generated image'}
-                className="w-full max-w-2xl mx-auto rounded-lg shadow-lg"
-              />
-              {img.label && (
-                <figcaption className="text-center text-sm text-gray-500 mt-2 italic">
-                  {img.label}
-                </figcaption>
-              )}
-            </figure>
-          ))}
-        </div>
-      )}
-      
-      {/* Article text content */}
-      <div
-        className="whitespace-pre-wrap"
-        dangerouslySetInnerHTML={{ __html: formatText(cleanContent) }}
-      />
-    </div>
-  );
+interface Article {
+  title: string;
+  introduction: string;
+  points: ArticlePoint[];
+  conclusion: string;
+}
+
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 export default function Home() {
-  const [topic, setTopic] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [article, setArticle] = useState('');
-  const [images, setImages] = useState<GeneratedImage[]>([]);
+  const [input, setInput] = useState('');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [status, setStatus] = useState('');
+  const [currentArticle, setCurrentArticle] = useState<Article | null>(null);
 
-  const handleGenerate = async () => {
-    if (!topic.trim()) return;
+  const handleSend = async () => {
+    if (!input.trim() || isLoading) return;
 
-    setIsGenerating(true);
-    setArticle('');
-    setImages([]);
+    const userMessage: Message = {
+      id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      role: 'user',
+      content: input.trim(),
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setIsLoading(true);
+    setStatus('جاري التحليل...');
 
     try {
-      console.log('Fetching article for topic:', topic);
-      const response = await fetch('/api/generate', {
+      const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ topic }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMessage.content }),
       });
-      
-      console.log('Response status:', response.status);
-      console.log('Response headers:', response.headers);
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
 
       if (reader) {
         let buffer = '';
+
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -96,148 +68,121 @@ export default function Home() {
           const chunk = decoder.decode(value, { stream: true });
           buffer += chunk;
           
-          // Process complete lines
           const lines = buffer.split('\n');
-          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+          buffer = lines.pop() || '';
 
           for (const line of lines) {
             if (!line.trim()) continue;
             
-            console.log('Raw line:', line.substring(0, 100));
+            const colonIndex = line.indexOf(':');
+            if (colonIndex === -1) continue;
             
-            // Try to parse as data stream format (Next.js AI SDK format)
-            if (line.startsWith('0:')) {
-              // Text delta format: 0:"text"
-              try {
-                const text = line.slice(2).replace(/^"(.*)"$/, '$1');
-                console.log('Text chunk:', text.substring(0, 50));
-                setArticle((prev) => prev + text);
-              } catch (e) {
-                console.error('Failed to parse text:', e);
-              }
-            } else if (line.startsWith('a:')) {
-              // Tool results format
-              try {
-                const toolData = JSON.parse(line.slice(2));
-                if (toolData && Array.isArray(toolData)) {
-                  for (const item of toolData) {
-                    if (item.result?.imageData && item.result?.success) {
-                      console.log('Found image:', item.result.label);
-                      setImages((prev) => [...prev, {
-                        imageData: item.result.imageData,
-                        label: item.result.label || 'Generated Image'
-                      }]);
-                    }
+            const type = line.substring(0, colonIndex);
+            const data = line.substring(colonIndex + 1);
+            
+            try {
+              if (type === 'status') {
+                const parsed = JSON.parse(data);
+                setStatus(parsed.message);
+              } else if (type === 'chat') {
+                const parsed = JSON.parse(data);
+                const assistantMessage: Message = {
+                  id: `assistant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                  role: 'assistant',
+                  content: parsed.message,
+                };
+                setMessages(prev => [...prev, assistantMessage]);
+              } else if (type === 'article') {
+                const parsed = JSON.parse(data);
+                setCurrentArticle(parsed);
+              } else if (type === 'image') {
+                const parsed = JSON.parse(data);
+                setCurrentArticle(prev => {
+                  if (!prev) return prev;
+                  const newPoints = [...prev.points];
+                  if (newPoints[parsed.pointIndex]) {
+                    newPoints[parsed.pointIndex] = {
+                      ...newPoints[parsed.pointIndex],
+                      imageData: parsed.imageData
+                    };
                   }
+                  return { ...prev, points: newPoints };
+                });
+              } else if (type === 'done') {
+                setStatus('');
+                // Add success message to chat
+                if (currentArticle) {
+                  const assistantMessage: Message = {
+                    id: `done-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                    role: 'assistant',
+                    content: 'تم إنشاء المقال بنجاح! 📝 يمكنك مشاهدته على اليمين.',
+                  };
+                  setMessages(prev => [...prev, assistantMessage]);
                 }
-              } catch (e) {
-                console.error('Failed to parse tool data:', e);
+              } else if (type === 'error') {
+                const parsed = JSON.parse(data);
+                setStatus(`خطأ: ${parsed.message}`);
               }
-            } else {
-              // Check if it's an image marker that should be filtered
-              if (line.includes('[IMAGE_GENERATED:') || line.includes('[IMAGE_FAILED]')) {
-                console.log('Skipping image marker:', line);
-                // Don't add to article - these are just status messages
-              } else {
-                // Plain text fallback (in case format is different)
-                console.log('Plain text:', line.substring(0, 50));
-                setArticle((prev) => prev + line + '\n');
-              }
+            } catch (e) {
+              console.error('Failed to parse:', type, e);
             }
           }
-        }
-        
-        // Process any remaining buffer
-        if (buffer.trim()) {
-          console.log('Final buffer:', buffer.substring(0, 50));
-          setArticle((prev) => prev + buffer);
         }
       }
     } catch (error) {
       console.error('Error:', error);
-      setArticle('Error generating article. Please try again.');
+      setStatus('حدث خطأ');
     } finally {
-      setIsGenerating(false);
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold text-gray-900 mb-4">
-            🤖 AI Article Generator
-          </h1>
-          <p className="text-xl text-gray-600">
-            Generate comprehensive articles with web research and AI
-          </p>
-        </div>
+    <div className="min-h-screen relative" style={{ background: 'hsl(var(--background))' }}>
+      <AnimatedBackground />
 
-        <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-          <div className="mb-6">
-            <label
-              htmlFor="topic"
-              className="block text-sm font-medium text-gray-700 mb-2"
+      {/* Header */}
+      <header className="relative z-10 p-4 glass-card rounded-none border-x-0 border-t-0">
+        <div className="container mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div 
+              className="w-10 h-10 rounded-lg flex items-center justify-center glow-border"
+              style={{ background: 'hsl(var(--primary))' }}
             >
-              Article Topic
-            </label>
-            <input
-              id="topic"
-              type="text"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="e.g., Artificial Intelligence in Healthcare"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition"
-              disabled={isGenerating}
+              <span className="text-xl font-bold text-white">A</span>
+            </div>
+            <h1 className="text-xl font-bold glow-text" style={{ color: 'hsl(var(--foreground))' }}>
+              AI Article Agent
+            </h1>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="relative z-10 container mx-auto p-4 h-[calc(100vh-80px)]">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
+          {/* Chat Panel - Left */}
+          <div className="h-full min-h-[500px] lg:min-h-0">
+            <ChatPanel 
+              messages={messages}
+              input={input}
+              setInput={setInput}
+              onSend={handleSend}
+              isLoading={isLoading}
+              status={status}
             />
           </div>
 
-          <button
-            onClick={handleGenerate}
-            disabled={isGenerating || !topic.trim()}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-lg transition duration-200 flex items-center justify-center"
-          >
-            {isGenerating ? (
-              <>
-                <svg
-                  className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  ></circle>
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  ></path>
-                </svg>
-                Generating Article...
-              </>
-            ) : (
-              '✨ Generate Article'
-            )}
-          </button>
-        </div>
-
-        {article && (
-          <div className="bg-white rounded-2xl shadow-xl p-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">
-              Generated Article
-            </h2>
-            <div className="prose prose-lg max-w-none">
-              <ArticleContent content={article} images={images} />
-            </div>
+          {/* Article Panel - Right */}
+          <div className="h-full min-h-[500px] lg:min-h-0">
+            <ArticlePanel 
+              article={currentArticle} 
+              isLoading={isLoading} 
+              status={status}
+            />
           </div>
-        )}
-      </div>
+        </div>
+      </main>
     </div>
   );
 }

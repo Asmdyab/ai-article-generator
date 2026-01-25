@@ -1,26 +1,214 @@
 @import "tailwindcss";
 
+/* AI Agent Dark Futuristic Design System */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: 240 20% 6%;
+  --foreground: 0 0% 95%;
+
+  --card: 240 15% 10%;
+  --card-foreground: 0 0% 95%;
+
+  --popover: 240 15% 10%;
+  --popover-foreground: 0 0% 95%;
+
+  --primary: 338 100% 60%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 240 15% 15%;
+  --secondary-foreground: 0 0% 95%;
+
+  --muted: 240 15% 18%;
+  --muted-foreground: 240 10% 60%;
+
+  --accent: 280 80% 60%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 240 15% 20%;
+  --input: 240 15% 18%;
+  --ring: 338 100% 60%;
+
+  --radius: 0.75rem;
+
+  /* Custom tokens */
+  --glow-primary: 338 100% 60%;
+  --glow-accent: 280 80% 60%;
+  --glass-bg: 240 15% 12%;
+  --stripe-color: 338 80% 50%;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: hsl(var(--border));
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* Glass Card */
+.glass-card {
+  background: hsl(var(--card) / 0.3);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid hsl(0 0% 100% / 0.15);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px hsl(0 0% 0% / 0.2),
+              inset 0 1px 0 hsl(0 0% 100% / 0.1);
+}
+
+/* Glow Effects */
+.glow-border {
+  position: relative;
+  box-shadow: 0 0 20px hsl(var(--primary) / 0.3),
+              0 0 40px hsl(var(--primary) / 0.1);
+}
+
+.glow-text {
+  text-shadow: 0 0 20px hsl(var(--primary) / 0.5),
+               0 0 40px hsl(var(--primary) / 0.3);
+}
+
+/* Animated Stripes */
+.animated-stripe {
+  position: absolute;
+  width: 0.35rem;
+  background: linear-gradient(to bottom, transparent, hsl(var(--primary)), transparent);
+  box-shadow: 0 0 10px hsl(var(--primary)),
+              0 0 25px hsl(var(--primary)),
+              0 0 50px hsl(var(--primary) / 0.8),
+              0 0 80px hsl(var(--primary) / 0.6),
+              0 0 120px hsl(var(--primary) / 0.4);
+  animation: stripeMove 8s ease-in-out infinite;
+}
+
+/* Chat Bubbles */
+.chat-bubble-user {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-radius: 1rem;
+  border-bottom-right-radius: 0.375rem;
+  padding: 0.75rem 1rem;
+}
+
+.chat-bubble-ai {
+  background: hsl(var(--card) / 0.6);
+  backdrop-filter: blur(24px);
+  border: 1px solid hsl(0 0% 100% / 0.1);
+  color: hsl(var(--foreground));
+  border-radius: 1rem;
+  border-bottom-left-radius: 0.375rem;
+  padding: 0.75rem 1rem;
+}
+
+/* Loader */
+.loader-dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+  animation: loaderPulse 1.4s ease-in-out infinite;
+}
+
+/* Scrollbar */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--primary) / 0.3) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: hsl(var(--primary) / 0.3);
+  border-radius: 3px;
+}
+
+/* Animations */
+@keyframes stripeMove {
+  0%, 100% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  50% {
+    transform: translateY(100%);
+    opacity: 1;
+  }
+}
+
+@keyframes loaderPulse {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease-out forwards;
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted)) 0%,
+    hsl(var(--primary) / 0.2) 50%,
+    hsl(var(--muted)) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
 }
