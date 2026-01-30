@@ -8,6 +8,25 @@ An intelligent article generator that uses AI to write professional articles in 
 
 ![AI Article Generator](./public/images/screenshot.png)
 
+## Tech Stack (AI SDK)
+
+- **AI SDK v6** (`ai@6.0.48`)
+- **Google Vertex AI** via `@ai-sdk/google-vertex`
+- **Gemini 2.5 Flash** للنصوص
+- **Imagen 3** للصور (مكالمة REST مباشرة عبر GoogleAuth)
+- **Exa** للبحث على الإنترنت
+
+## Environment Variables
+
+Create `.env.local` in the project root:
+
+```env
+EXA_API_KEY=your_exa_api_key
+GOOGLE_VERTEX_PROJECT=your_project_id
+GOOGLE_VERTEX_LOCATION=us-central1
+GOOGLE_APPLICATION_CREDENTIALS=path_to_credentials.json
+```
+
 ## Getting Started
 
 First, run the development server:
@@ -26,7 +45,15 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## How the Agent Works (Quick)
+
+- Frontend (`app/page.tsx`) sends the user prompt to `POST /api/agent`.
+- The Agent (`app/api/agent/route.ts`) uses **ToolLoopAgent** with 3 tools:
+  1. `search_web` → Exa search
+  2. `generate_article` → `generateText` + `Output.object` (structured output)
+  3. `generate_image` → Imagen 3 REST call
+- The API streams events to the UI:
+  - `status`, `chat`, `article`, `image`, `done`, `error`
 
 ## Learn More
 

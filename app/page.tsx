@@ -49,7 +49,7 @@ export default function Home() {
     setStatus('جاري التحليل...');
 
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMessage.content }),
@@ -112,15 +112,6 @@ export default function Home() {
                 });
               } else if (type === 'done') {
                 setStatus('');
-                // Add success message to chat
-                if (articleReceived) {
-                  const assistantMessage: Message = {
-                    id: `done-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                    role: 'assistant',
-                    content: 'تم إنشاء المقال بنجاح! 📝 يمكنك مشاهدته على اليمين.',
-                  };
-                  setMessages(prev => [...prev, assistantMessage]);
-                }
               } else if (type === 'error') {
                 const parsed = JSON.parse(data);
                 setStatus(`خطأ: ${parsed.message}`);
@@ -154,7 +145,7 @@ export default function Home() {
               <span className="text-xl font-bold text-white">A</span>
             </div>
             <h1 className="text-xl font-bold glow-text" style={{ color: 'hsl(var(--foreground))' }}>
-              AI Article Agent
+              AI Article Agent 🤖
             </h1>
           </div>
         </div>

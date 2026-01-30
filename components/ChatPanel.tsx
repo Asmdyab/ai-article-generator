@@ -38,8 +38,8 @@ const ChatPanel = ({ messages, input, setInput, onSend, isLoading, status }: Cha
           <Bot className="w-5 h-5" style={{ color: 'hsl(var(--primary))' }} />
         </div>
         <div>
-          <h2 className="font-semibold" style={{ color: 'hsl(var(--foreground))' }}>AI Article Writer</h2>
-          <p className="text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>مساعدك الذكي للكتابة</p>
+          <h2 className="font-semibold" style={{ color: 'hsl(var(--foreground))' }}>AI Article Agent</h2>
+          <p className="text-xs" style={{ color: 'hsl(var(--muted-foreground))' }}>وكيل ذكي للبحث وكتابة المقالات</p>
         </div>
       </div>
 
